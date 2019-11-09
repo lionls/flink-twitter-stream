@@ -63,10 +63,6 @@ object PredictJob {
 
     val stream = StreamUtils.createTwitterStream(env, props)
 
-    AVGTweetLength.compareMetrictoBatch(stream, avgtweetlen, ElasticKit.createSink[AVGTweetLengthResult]("comptweetlength-idx","comptweetlength-timeline"), props)
-    AVGRetweets.compareMetrictoBatch(stream, avgretweets, ElasticKit.createSink[AVGRetweetsResult]("compavgretweetscount-idx","compavgretweetscount-timeline"), props)
-
-
     /**
       * PREDICTING
       */

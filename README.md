@@ -25,6 +25,7 @@ https://www.youtube.com/watch?v=rRF9ZqnccBI
 * **WordCount** - most used words by trackterm in timewindow
 
 
+![Streaming Dashboard](/screenshots/streaming.png?raw=true "Streaming Dashboard")
 
 ### Batch-Metrics:
 * **AVGRetweets** - Average number of retweets per trackterm
@@ -42,6 +43,10 @@ https://www.youtube.com/watch?v=rRF9ZqnccBI
 
 The calculated batch results are saved in csv format in folder "./batch".
 
+
+![Batch Dashboard](/screenshots/batch.png?raw=true "Batch Dashboard")
+
+
 ### Compare-Metrics:
 * **AVGRetweets** - Average number of retweets per trackterm subtracted by average retweets calculated by batch 
 * **AVGTweetLength** - Average character length of the tweets per trackterm subtracted by average tweetlength calculated by batch 
@@ -51,6 +56,9 @@ The calculated batch results are saved in csv format in folder "./batch".
 * **WordCount Top N** - Top N most used words by trackterm loaded from batch compared to whether they are also present in the stream
 
 Comparing the metrics and displaying them in a dashboard it is obvious, that at the first 3 metrics they are more similar if they are closer to 0. At the last 3 metrics they are tracking whether a term occures in batch and in streaming. 
+
+
+![Compare Dashboard](/screenshots/compare.png?raw=true "Compare Dashboard")
 
 
 ### Prediction-Metrics:
@@ -63,6 +71,11 @@ The first 2 metrics are calculated by following formula:
 
 The last metric uses a Linear Regression model.
 
+
+
+![Prediction Dashboard](/screenshots/prediction.png?raw=true "Prediction Dashboard")
+
+
 ### How to run
 First add your own twitter.properties file with your secret keys.
 
@@ -70,8 +83,4 @@ To run the different objectives you first have to launch a docker-elk stack usin
 ```
 docker-compose up
 ```
-Then you can run the specific programms:
-```
-java -Dmode=2 -DpropertyPath=config.properties -Dpresentation -cp big-data-project-1.0.jar de.bigdata.project.TwitterAnalysisMain
-
-```
+Then import the pom.xml as a Scala Maven project into IntelliJ IDEA. Select the job you want to run and execute.
