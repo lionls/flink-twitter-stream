@@ -12,7 +12,7 @@ Here you can see an execution and detailed explanation of the programm:
 
 https://www.youtube.com/watch?v=rRF9ZqnccBI
 
-### Streaming-Metrics:
+## Streaming-Metrics:
 * **AVGRetweets** - Average number of retweets per trackterm and timewindow
 * **AVGTweetLength** - Average character length of the tweets per trackterm and timewindow
 * **CountTrackTerms** - Occurances of trackterm per timewindow
@@ -27,7 +27,7 @@ https://www.youtube.com/watch?v=rRF9ZqnccBI
 
 ![Streaming Dashboard](/screenshots/streaming.png?raw=true "Streaming Dashboard")
 
-### Batch-Metrics:
+## Batch-Metrics:
 * **AVGRetweets** - Average number of retweets per trackterm
 * **AVGTweetLength** - Average character length of the tweets per trackterm
 * **CountTrackTerms** - Occurances of trackterm
@@ -47,7 +47,7 @@ The calculated batch results are saved in csv format in folder "./batch".
 ![Batch Dashboard](/screenshots/batch.png?raw=true "Batch Dashboard")
 
 
-### Compare-Metrics:
+## Compare-Metrics:
 * **AVGRetweets** - Average number of retweets per trackterm subtracted by average retweets calculated by batch 
 * **AVGTweetLength** - Average character length of the tweets per trackterm subtracted by average tweetlength calculated by batch 
 * **TotalCount** - Sum of tweetype per trackterm subtracted by average totalcount calculated by batch 
@@ -61,7 +61,7 @@ Comparing the metrics and displaying them in a dashboard it is obvious, that at 
 ![Compare Dashboard](/screenshots/compare.png?raw=true "Compare Dashboard")
 
 
-### Prediction-Metrics:
+## Prediction-Metrics:
 * **AVGRetweets** - Predicting the value of the next timewindow average retweets count
 * **AVGTweetLength** - Predicting the value of the next timewindow average tweet length
 * **RetweetFollowers** - Predicts the count of retweets for followers on a tweet in average per timewindow
@@ -79,7 +79,7 @@ The last metric uses a Linear Regression model.
 ### How to run
 First add your own twitter.properties file with your secret keys.
 
-To run the different objectives you first have to launch a docker-elk stack using:
+To run the different objectives you first have to launch a docker-elk stack (https://github.com/deviantony/docker-elk) using:
 ```
 docker-compose up
 ```
