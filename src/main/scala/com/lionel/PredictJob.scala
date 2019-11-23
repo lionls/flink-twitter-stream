@@ -65,7 +65,6 @@ object PredictJob {
       * PREDICTING
       */
 
-
     AVGTweetLength.addPrediction(stream, avgTweetLen, ElasticKit.createSink[AVGTweetLengthResult]("predtweetlength-idx","predtweetlength-timeline"), props)
     AVGRetweets.addPrediction(stream, avgRetweets, ElasticKit.createSink[AVGRetweetsResult]("predavgretweetscount-idx","predavgretweetscount-timeline"), props)
     RetweetFollowers.addPrediction(stream, ElasticKit.createSink[AVGRetweetFollowersResult]("predretweetsfollowers-idx","predretweetsfollowers-timeline"), props)

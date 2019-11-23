@@ -47,8 +47,7 @@ object CompareJob {
   def main(args: Array[String]) {
     // set up the batch execution environment
     val env = StreamExecutionEnvironment.getExecutionEnvironment
-    val batchEnv = ExecutionEnvironment.getExecutionEnvironment
-//    val batchenv = ExecutionEnvironment.getExecutionEnvironment
+
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(10,5000))
     val params = ParameterTool.fromPropertiesFile("twitter.properties")
     val propsTweet = new Properties()

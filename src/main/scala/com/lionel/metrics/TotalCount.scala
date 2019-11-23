@@ -73,10 +73,6 @@ object TotalCount {
       .connect(count)
       .keyBy(_.trackterm,_._1)
       .flatMap(new CountDiff)
-//      .map(t=> {
-//        val x:(String,String,Long) = compare.filter(x=> (x._1.equals(t.trackterm) && x._2.equals(t.tweetType)))(0)
-//        TotalCountResult("tweetType", t.timestamp, t.tweetType, t.trackterm, (t.count-x._3).toInt)
-//      })
       .addSink(sink)
       .setParallelism(props.parallelism)
       .name("Total Count")

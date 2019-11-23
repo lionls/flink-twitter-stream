@@ -12,6 +12,10 @@ Here you can see an execution and detailed explanation of the programm:
 
 https://www.youtube.com/watch?v=rRF9ZqnccBI
 
+Fix using RichCoMapFuncions:
+
+https://youtu.be/Vl4BtwxRNyk
+
 ## Streaming-Metrics:
 * **AVGRetweets** - Average number of retweets per trackterm and timewindow
 * **AVGTweetLength** - Average character length of the tweets per trackterm and timewindow
