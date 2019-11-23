@@ -72,7 +72,6 @@ object BatchJob {
       .filter(te => te.nonEmpty && te.get.isInstanceOf[Tweet])
       .map(_.get.asInstanceOf[Tweet])
 
-//    loaded.map(t=> (t.searchTerm,1)).groupBy(0).sum(1).print()
 
 
     // push tweet count per Time Window to elastic
@@ -111,7 +110,6 @@ object BatchJob {
 
     AVGTweetLength.addBatchMetric(loaded, "batch/avgtweet.csv")
 
-    //stream.print()
 
 
     // BATCH get the same with less values for compare Function only TopN

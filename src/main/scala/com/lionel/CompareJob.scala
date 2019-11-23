@@ -47,6 +47,7 @@ object CompareJob {
   def main(args: Array[String]) {
     // set up the batch execution environment
     val env = StreamExecutionEnvironment.getExecutionEnvironment
+    val batchEnv = ExecutionEnvironment.getExecutionEnvironment
 //    val batchenv = ExecutionEnvironment.getExecutionEnvironment
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(10,5000))
     val params = ParameterTool.fromPropertiesFile("twitter.properties")
@@ -55,33 +56,31 @@ object CompareJob {
     propsTweet.setProperty(TwitterSource.CONSUMER_SECRET, params.get("CONSUMER_SECRET"))
     propsTweet.setProperty(TwitterSource.TOKEN, params.get("TOKEN"))
     propsTweet.setProperty(TwitterSource.TOKEN_SECRET, params.get("TOKEN_SECRET"))
-    val props = new TweetProps(windowTime = Time.seconds(10),TwitterSource = propsTweet, searchTerms = "donald trump,joe biden,bernie sanders,elizabeth warren,election2020")
+    val props = new TweetProps(windowTime = Time.seconds(60),TwitterSource = propsTweet, searchTerms = "donald trump,joe biden,bernie sanders,elizabeth warren,election2020")
 
 
     // load results from batch job for comparsion
 
     val startdate = 1572203359994L  //set start end enddate to average over complete batch timeline so we can get avg per minute factor
     val enddate = 1572216813539L
-
     val minutes = (enddate-startdate) / 60000 // minutes for all collected batch items
-
-
-    // List of Tuple L((trackterm,value),...)
-    val hashtagTopN = CSVReader.open(new File("batch/hashtagTopN.csv")).all().map(e=>(e(0).split(";")(2),e(0).split(";")(1)))
-    val wordcountTopN = CSVReader.open(new File("batch/wordcountTopN.csv")).all().map(e=>(e(0).split(";")(2),e(0).split(";")(1)))
-    val sourcecountTopN = CSVReader.open(new File("batch/sourcecountTopN.csv")).all().map(e=>(e(0).split(";")(2),e(0).split(";")(1),(e(0).split(";")(3)).toInt/minutes))
-    val totalcount = CSVReader.open(new File("batch/totalcount.csv")).all().map(e=>(e(0).split(";")(1),e(0).split(";")(2),(e(0).split(";")(3)).toInt/minutes))
-    val avgtweetlen = CSVReader.open(new File("batch/avgtweet.csv")).all().map(e=>(e(0).split(";")(1),e(0).split(";")(2)))
-    val avgretweets = CSVReader.open(new File("batch/avgretweets.csv")).all().map(e=>(e(0).split(";")(1),e(0).split(";")(2)))
 
     val stream = StreamUtils.createTwitterStream(env, props)
 
+// read as datastream
+    val avgTweetLen = env.readTextFile("batch/avgtweet.csv").map(e => e.split(";")).map(e => (e(1).toInt,e(2))) //load data into tuples
+    val avgRetweets = env.readTextFile("batch/avgretweets.csv").map(e => e.split(";")).map(e => (e(1).toInt,e(2))) //load data into tuples
+    val sourceCountTopN = env.readTextFile("batch/sourcecountTopN.csv").map(e => e.split(";")).map(e => (e(1),e(2),e(3).toInt/minutes)) //load data into tuples
+    val totalCount = env.readTextFile("batch/totalcount.csv").map(e => e.split(";")).map(e => (e(1),e(2),e(3).toInt/minutes)) //load data into tuples
+    val wordCountTopN = env.readTextFile("batch/wordcountTopN.csv").map(e => e.split(";")).map(e => (e(0),e(1))) //load data into tuples
+    val hashtagTopN = env.readTextFile("batch/hashtagTopN.csv").map(e => e.split(";")).map(e => (e(0),e(1))) //load data into tuples
+
     HashtagCount.compareMetrictoBatch(stream, hashtagTopN, ElasticKit.createSink[HashtagResult]("comphashtagcount-idx","comphashtagcount-timeline"), props)
-    WordCount.compareMetrictoBatch(stream, wordcountTopN, ElasticKit.createSink[WordResult]("compwordcount-idx", "compwordcount-timeline"), props)
-    SourceCount.compareMetrictoBatch(stream, sourcecountTopN, ElasticKit.createSink[SourceResult]("compsourcecount-idx","compsourcecount-timeline"), props)
-    TotalCount.compareMetrictoBatch(stream, totalcount, ElasticKit.createSink[TotalCountResult]("comptweetcount-idx","comptweetcount-timeline"), props)
-    AVGTweetLength.compareMetrictoBatch(stream, avgtweetlen, ElasticKit.createSink[AVGTweetLengthResult]("comptweetlength-idx","comptweetlength-timeline"), props)
-    AVGRetweets.compareMetrictoBatch(stream, avgretweets, ElasticKit.createSink[AVGRetweetsResult]("compavgretweetscount-idx","compavgretweetscount-timeline"), props)
+    WordCount.compareMetrictoBatch(stream, wordCountTopN, ElasticKit.createSink[WordResult]("compwordcount-idx", "compwordcount-timeline"), props)
+    SourceCount.compareMetrictoBatch(stream, sourceCountTopN, ElasticKit.createSink[SourceResult]("compsourcecount-idx","compsourcecount-timeline"), props)
+    TotalCount.compareMetrictoBatch(stream, totalCount, ElasticKit.createSink[TotalCountResult]("comptweetcount-idx","comptweetcount-timeline"), props)
+    AVGTweetLength.compareMetrictoBatch(stream, avgTweetLen, ElasticKit.createSink[AVGTweetLengthResult]("comptweetlength-idx","comptweetlength-timeline"), props)
+    AVGRetweets.compareMetrictoBatch(stream, avgRetweets, ElasticKit.createSink[AVGRetweetsResult]("compavgretweetscount-idx","compavgretweetscount-timeline"), props)
 
     // execute program
     env.execute("Flink Batch Scala API Skeleton")

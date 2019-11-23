@@ -29,6 +29,7 @@ import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.connectors.twitter.TwitterSource
+import org.apache.flink.api.scala._
 
 /**
  * Skeleton for a Flink Batch Job.
@@ -45,7 +46,6 @@ object PredictJob {
   def main(args: Array[String]) {
     // set up the batch execution environment
     val env = StreamExecutionEnvironment.getExecutionEnvironment
-//    val batchenv = ExecutionEnvironment.getExecutionEnvironment
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(10,5000))
     val params = ParameterTool.fromPropertiesFile("twitter.properties")
     val propsTweet = new Properties()
@@ -55,23 +55,20 @@ object PredictJob {
     propsTweet.setProperty(TwitterSource.TOKEN_SECRET, params.get("TOKEN_SECRET"))
     val props = new TweetProps(windowTime = Time.seconds(60),TwitterSource = propsTweet, searchTerms = "donald trump,joe biden,bernie sanders,elizabeth warren,election2020")
 
+    val stream = StreamUtils.createTwitterStream(env, props)
 
     // load results from batch job for prediction
-
-    val avgtweetlen = CSVReader.open(new File("batch/avgtweet.csv")).all().map(e=>(e(0).split(";")(1),e(0).split(";")(2)))
-    val avgretweets = CSVReader.open(new File("batch/avgretweets.csv")).all().map(e=>(e(0).split(";")(1),e(0).split(";")(2)))
-
-    val stream = StreamUtils.createTwitterStream(env, props)
+    val avgTweetLen = env.readTextFile("batch/avgtweet.csv").map(e => e.split(";")).map(e => (e(1).toInt,e(2))) //load data into tuples
+    val avgRetweets = env.readTextFile("batch/avgretweets.csv").map(e => e.split(";")).map(e => (e(1).toInt,e(2))) //load data into tuples
 
     /**
       * PREDICTING
       */
 
 
-    AVGTweetLength.addPrediction(stream, avgtweetlen, ElasticKit.createSink[AVGTweetLengthResult]("predtweetlength-idx","predtweetlength-timeline"), props)
-    AVGRetweets.addPrediction(stream, avgretweets, ElasticKit.createSink[AVGRetweetsResult]("predavgretweetscount-idx","predavgretweetscount-timeline"), props)
+    AVGTweetLength.addPrediction(stream, avgTweetLen, ElasticKit.createSink[AVGTweetLengthResult]("predtweetlength-idx","predtweetlength-timeline"), props)
+    AVGRetweets.addPrediction(stream, avgRetweets, ElasticKit.createSink[AVGRetweetsResult]("predavgretweetscount-idx","predavgretweetscount-timeline"), props)
     RetweetFollowers.addPrediction(stream, ElasticKit.createSink[AVGRetweetFollowersResult]("predretweetsfollowers-idx","predretweetsfollowers-timeline"), props)
-
 
     // execute program
     env.execute("Flink Batch Scala API Skeleton")

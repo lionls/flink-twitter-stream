@@ -5,21 +5,25 @@ import com.lionel.twitter.Tweet
 import com.nwrs.lionel.streaming.JsonResult
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.streaming.api.functions.sink.SinkFunction
-import org.apache.flink.streaming.api.scala.DataStream
+import org.apache.flink.streaming.api.scala.{DataStream, createTypeInformation}
 import org.apache.flink.streaming.api.scala.function.ProcessWindowFunction
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.apache.flink.util.Collector
-import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.scala.function.ProcessAllWindowFunction
 import org.apache.flink.util.Collector
 import java.util
+
 import org.apache.flink.api.common.operators.Order
-
 import org.apache.flink.streaming.api.datastream.KeyedStream
-
-import scala.collection.JavaConverters._
 import org.apache.flink.api.common.functions.FlatMapFunction
+import org.apache.flink.api.common.state.{ListState, ListStateDescriptor}
+import org.apache.flink.api.scala.DataSet
+import org.apache.flink.configuration.Configuration
 import org.apache.flink.core.fs.FileSystem
+import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
+
+import scala.collection.JavaConversions._
+import scala.util.control.Breaks.{break, breakable}
 
 case class WordResult( timestamp:Long, trackterm:String, word:String, count:Int ) extends JsonResult[WordResult] {
   override def +(other:WordResult):WordResult = this.copy(count = count + other.count)
@@ -71,18 +75,21 @@ object WordCount {
       .groupBy(2)
       .sortGroup(3, Order.DESCENDING)
       .first(n)
+      .map(t=>(t._2,t._3)) // word | trackterm
       .writeAsCsv(outputFile,"\n",";",FileSystem.WriteMode.OVERWRITE)
       .setParallelism(1)
       .name("Word Count")
   }
 
-  def compareMetrictoBatch(stream: DataStream[Tweet], compare:List[(String,String)],sink: SinkFunction[WordResult], props:TweetProps):Unit = {
+  def compareMetrictoBatch(stream: DataStream[Tweet], wordcount:DataStream[(String,String)],sink: SinkFunction[WordResult], props:TweetProps):Unit = {
     stream
       .flatMap(new Tokenizer)
       .keyBy(_.key)
       .timeWindow(props.windowTime)
       .reduce(_ + _)
-      .filter(t => compare.contains((t.trackterm,t.word)))
+      .connect(wordcount)
+      .keyBy(_.trackterm,_._2)
+      .flatMap(new WordCountFilter)
       .addSink(sink)
       .setParallelism(props.parallelism)
       .name("Word Count")
@@ -102,3 +109,27 @@ class Tokenizer extends FlatMapFunction[Tweet,WordResult] {
   }
 }
 
+class WordCountFilter extends RichCoFlatMapFunction[WordResult,(String,String),WordResult]{ // already keyed
+  private var compare: ListState[(String,String)] = _
+
+  override def open(parameters: Configuration): Unit = {
+    super.open(parameters)
+    compare = getRuntimeContext.getListState(new ListStateDescriptor[(String,String)]("wordfilter", createTypeInformation[(String,String)]))
+  }
+
+  override def flatMap1(t: WordResult, out: Collector[WordResult]): Unit = {
+    breakable {
+      for (elem:(String,String) <- compare.get) {
+        if (elem._2 == t.trackterm && elem._1 == t.word) {
+          out.collect(WordResult(t.timestamp,t.trackterm,t.word,t.count))
+          break
+        }
+      }
+    }
+  }
+
+  override def flatMap2(elem: (String,String), out: Collector[WordResult]): Unit = { //load into listState
+    compare.add(elem)
+    println("pushed into state " + elem)
+  }
+}

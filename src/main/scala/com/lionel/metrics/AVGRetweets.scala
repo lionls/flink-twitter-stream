@@ -7,9 +7,11 @@ import com.lionel.streaming.TweetProps
 import com.lionel.twitter.Tweet
 import com.nwrs.lionel.streaming.JsonResult
 import org.apache.flink.api.common.functions.RichMapFunction
+import org.apache.flink.api.common.state.{ValueState, ValueStateDescriptor}
 import org.apache.flink.api.scala.DataSet
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.core.fs.FileSystem
+import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
 import org.apache.flink.streaming.api.functions.sink.SinkFunction
 import org.apache.flink.streaming.api.scala.DataStream
 import org.apache.flink.streaming.api.scala._
@@ -68,74 +70,100 @@ object AVGRetweets {
       .name("AVG Retweets")
   }
 
-  def compareMetrictoBatch(stream: DataStream[Tweet], compare:List[(String,String)], sink: SinkFunction[AVGRetweetsResult], props:TweetProps):Unit = {
+  def compareMetrictoBatch(stream: DataStream[Tweet], avgRetweets: DataStream[(Int, String)], sink: SinkFunction[AVGRetweetsResult], props:TweetProps):Unit = {
     stream
       .filter(t=>t.tweetType == "Retweet")
       .map(t => AVGRetweetsResult("RetweetTweetType",t.date,t.tweetType,t.retweetNumRetweets,t.searchTerm,1))
       .keyBy(_.key)
       .timeWindow(props.windowTime)
       .process(new AVGRetweets())
-      .map(t=> {
-        val x:(String,String) = compare.filter(x=> x._2.equals(t.trackterm))(0)
-        AVGRetweetsResult("RetweetTweetType",t.timestamp,t.tweetType,(t.retweets-x._1.toInt).toInt,t.trackterm,1)
-      })
+      .connect(avgRetweets)
+      .keyBy(_.trackterm,_._2)
+      .flatMap(new AVGRetweetsDiff)
       .addSink(sink)
       .setParallelism(props.parallelism)
       .name("Total Count")
   }
 
-  def addPrediction(stream: DataStream[Tweet], compare:List[(String,String)], sink: SinkFunction[AVGRetweetsResult], props:TweetProps):Unit = {
+  def addPrediction(stream: DataStream[Tweet], avgRetweets: DataStream[(Int, String)], sink: SinkFunction[AVGRetweetsResult], props:TweetProps):Unit = {
     stream
       .filter(_.tweetType == "Retweet")
       .map(t => AVGRetweetsResult("RetweetTweetType",t.date,t.tweetType,t.retweetNumRetweets,t.searchTerm,1))
       .keyBy(_.key)
       .timeWindow(props.windowTime)
       .process(new AVGRetweets())
-      .map(new AVGRetweetsPred(compare))
+      .connect(avgRetweets)
+      .keyBy(_.trackterm,_._2)
+      .flatMap(new AVGRetweetsPred)
       .addSink(sink)
       .setParallelism(props.parallelism)
       .name("AVG Retweets Count")
   }
 }
 
+class AVGRetweetsDiff extends RichCoFlatMapFunction[AVGRetweetsResult,(Int,String),AVGRetweetsResult]{ // already keyed
+  private var compare: ValueState[(Int, String)] = _
 
-class AVGRetweetsPred(compare:List[(String,String)]) extends RichMapFunction[AVGRetweetsResult, AVGRetweetsResult] { // predict mean between new and old val
-  var preds = new mutable.HashMap[String,Int]
+  override def open(parameters: Configuration): Unit = {
+    super.open(parameters)
+    compare = getRuntimeContext.getState(new ValueStateDescriptor[(Int, String)]("avgRetweetVal", createTypeInformation[(Int, String)]))
+  }
 
-  def toInt(s: String): Int = {
-    try {
-      s.toInt
-    } catch {
-      case e: Exception => 100
+  override def flatMap1(avgtweet: AVGRetweetsResult, out: Collector[AVGRetweetsResult]): Unit = {
+    val compareVal = compare.value() // extract the value
+
+    if(compareVal._2 == avgtweet.trackterm){
+      out.collect(AVGRetweetsResult(avgtweet.nameID, avgtweet.timestamp, avgtweet.tweetType, avgtweet.retweets - compareVal._1, avgtweet.trackterm, avgtweet.count))
     }
   }
+
+  override def flatMap2(avgcompare: (Int,String), out: Collector[AVGRetweetsResult]): Unit = { //load into valueState
+    val compareVal = compare.value()
+
+    if(compareVal != null){
+      compare.clear()
+    }
+    compare.update(avgcompare)
+    println("pushed into state " + avgcompare)
+  }
+}
+
+
+class AVGRetweetsPred extends RichCoFlatMapFunction[AVGRetweetsResult,(Int,String),AVGRetweetsResult] { // predict mean between new and old val
+  private var preds: ValueState[(Int, String)] = _
 
   // get old data
   override def open(config:Configuration ): Unit = {
-    compare.map(i => preds.put(i._2, toInt(i._1)))
+    super.open(config)
+    preds = getRuntimeContext.getState(new ValueStateDescriptor[(Int, String)]("predRetweets", createTypeInformation[(Int, String)]))
   }
 
   @throws[Exception]
-  override def map(curr: AVGRetweetsResult): AVGRetweetsResult = {
-    var prePred:Int = 0
+  override def flatMap1(curr: AVGRetweetsResult, out: Collector[AVGRetweetsResult]): Unit = {
+    val predVal = preds.value()
 
-    for (key <- preds.keySet) {
-      if (key == curr.trackterm) {
-        prePred = preds.getOrDefault(key,1000)
-      }
+    if(predVal._2 == curr.trackterm){
+      val newPred:Int = ((predVal._1 + curr.retweets) / 2).toInt // calculate mean
+      preds.update((newPred, curr.trackterm))
+      out.collect(AVGRetweetsResult(curr.nameID,curr.timestamp,curr.tweetType,newPred,curr.trackterm+"#prediction",curr.count))
     }
-    // Mean
-    val newPred:Int = ((prePred + curr.retweets) / 2).toInt
-    preds.put(curr.trackterm, newPred)
+  }
 
-    AVGRetweetsResult("RetweetTweetType",curr.timestamp,curr.tweetType,newPred,curr.trackterm+"#prediction",curr.count)
+  override def flatMap2(avgcompare: (Int,String), out: Collector[AVGRetweetsResult]): Unit = { //load into valueState
+    val predsVal = preds.value()
+
+    if(predsVal != null){
+      preds.clear()
+    }
+    preds.update(avgcompare)
+    println("pushed into state " + avgcompare)
   }
 }
 
 class AVGRetweets extends ProcessWindowFunction[AVGRetweetsResult, AVGRetweetsResult, String, TimeWindow] {
   override def process(key: String, context: Context, elements: Iterable[AVGRetweetsResult], out: Collector[AVGRetweetsResult]): Unit = {
       val time:Long = context.currentProcessingTime
-      val avgres:AVGRetweetsResult = elements.foldLeft(AVGRetweetsResult("RetweetTweetType",time,"Retweet",0,"term",0))(_+_)//((AVGRetweetsResult("RetweetTweetType",time,"Retweet",0,0))((a:AVGRetweetsResult, b:AVGRetweetsResult) => (a+b)))
+      val avgres:AVGRetweetsResult = elements.foldLeft(AVGRetweetsResult("RetweetTweetType",time,"Retweet",0,"term",0))(_+_)
       val (sum,cnt) = (avgres.retweets,avgres.count)
       out.collect(AVGRetweetsResult(avgres.nameID,avgres.timestamp,avgres.tweetType,sum/cnt,avgres.trackterm,1))
   }

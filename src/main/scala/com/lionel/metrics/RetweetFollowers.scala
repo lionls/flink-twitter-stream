@@ -80,37 +80,15 @@ class AVGRetweetFollowers extends ProcessWindowFunction[AVGRetweetFollowersResul
 
 
 class AVGRetweetsFollowersPred extends RichMapFunction[AVGRetweetFollowersResult, AVGRetweetFollowersResult] { // predict using linear regression
-
-    var predTrump:ValueState[SimpleRegression] = null
-    var predWarren:ValueState[SimpleRegression] = null
-    var predBiden :ValueState[SimpleRegression] = null
-    var predSanders:ValueState[SimpleRegression] = null
-    var predElection:ValueState[SimpleRegression] = null
-
+    var model:ValueState[SimpleRegression] = _
 
   override def open(config:Configuration ): Unit = { //init tags
-    predTrump = getRuntimeContext.getState(new ValueStateDescriptor("trump",classOf[SimpleRegression]))
-    predWarren = getRuntimeContext.getState(new ValueStateDescriptor("warren",classOf[SimpleRegression]))
-    predBiden = getRuntimeContext.getState(new ValueStateDescriptor("biden",classOf[SimpleRegression]))
-    predSanders = getRuntimeContext.getState(new ValueStateDescriptor("sanders",classOf[SimpleRegression]))
-    predElection = getRuntimeContext.getState(new ValueStateDescriptor("election",classOf[SimpleRegression]))
+    model = getRuntimeContext.getState(new ValueStateDescriptor("model",classOf[SimpleRegression]))
   }
 
   @throws[Exception]
   override def map(curr: AVGRetweetFollowersResult): AVGRetweetFollowersResult = {
     var prediction:Double = 0
-    var model:ValueState[SimpleRegression] = null
-
-    curr.trackterm match{
-      case "trump" => {model = predTrump}
-      case "warren" => {model = predWarren}
-      case "biden" => {model = predBiden}
-      case "sanders" => {model = predSanders}
-      case "election2020" => {model = predElection}
-      case _ => println("not found")
-    }
-
-
     var modelExtracted = model.value()
 
     if(modelExtracted == null){
@@ -119,16 +97,67 @@ class AVGRetweetsFollowersPred extends RichMapFunction[AVGRetweetFollowersResult
 
     try {
       prediction = modelExtracted.predict(curr.followers)
-      println("got "+ prediction)
     } catch {
       case _:Throwable => println("error in prediction")
     }
 
     modelExtracted.addData(curr.followers.toDouble,curr.retweets.toDouble)
-    println(prediction + " updated model " + curr.retweets)
     model.update(modelExtracted)
-    println(modelExtracted)
-
     AVGRetweetFollowersResult(curr.followers, curr.timestamp, prediction.toInt, curr.trackterm + "#prediction", 1)
   }
 }
+
+
+//class AVGRetweetsFollowersPred extends RichMapFunction[AVGRetweetFollowersResult, AVGRetweetFollowersResult] { // predict using linear regression
+//
+//  var predTrump:ValueState[SimpleRegression] = null
+//  var predWarren:ValueState[SimpleRegression] = null
+//  var predBiden :ValueState[SimpleRegression] = null
+//  var predSanders:ValueState[SimpleRegression] = null
+//  var predElection:ValueState[SimpleRegression] = null
+//
+//
+//  override def open(config:Configuration ): Unit = { //init tags
+//    predTrump = getRuntimeContext.getState(new ValueStateDescriptor("trump",classOf[SimpleRegression]))
+//    predWarren = getRuntimeContext.getState(new ValueStateDescriptor("warren",classOf[SimpleRegression]))
+//    predBiden = getRuntimeContext.getState(new ValueStateDescriptor("biden",classOf[SimpleRegression]))
+//    predSanders = getRuntimeContext.getState(new ValueStateDescriptor("sanders",classOf[SimpleRegression]))
+//    predElection = getRuntimeContext.getState(new ValueStateDescriptor("election",classOf[SimpleRegression]))
+//  }
+//
+//  @throws[Exception]
+//  override def map(curr: AVGRetweetFollowersResult): AVGRetweetFollowersResult = {
+//    var prediction:Double = 0
+//    var model:ValueState[SimpleRegression] = null
+//
+//    curr.trackterm match{
+//      case "trump" => {model = predTrump}
+//      case "warren" => {model = predWarren}
+//      case "biden" => {model = predBiden}
+//      case "sanders" => {model = predSanders}
+//      case "election2020" => {model = predElection}
+//      case _ => println("not found")
+//    }
+//
+//
+//    var modelExtracted = model.value()
+//
+//    if(modelExtracted == null){
+//      modelExtracted = new SimpleRegression()
+//    }
+//
+//    try {
+//      prediction = modelExtracted.predict(curr.followers)
+//      println("got "+ prediction)
+//    } catch {
+//      case _:Throwable => println("error in prediction")
+//    }
+//
+//    modelExtracted.addData(curr.followers.toDouble,curr.retweets.toDouble)
+//    println(prediction + " updated model " + curr.retweets)
+//    model.update(modelExtracted)
+//    println(modelExtracted)
+//
+//    AVGRetweetFollowersResult(curr.followers, curr.timestamp, prediction.toInt, curr.trackterm + "#prediction", 1)
+//  }
+//}

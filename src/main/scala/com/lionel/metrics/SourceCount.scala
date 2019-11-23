@@ -4,12 +4,17 @@ import com.lionel.streaming.TweetProps
 import com.lionel.twitter.Tweet
 import com.nwrs.lionel.streaming.JsonResult
 import org.apache.flink.api.common.operators.Order
+import org.apache.flink.api.common.state.{ListState, ListStateDescriptor, ValueState, ValueStateDescriptor}
 import org.apache.flink.api.scala.DataSet
+import org.apache.flink.configuration.Configuration
 import org.apache.flink.core.fs.FileSystem
+import org.apache.flink.streaming.api.functions.co.RichCoFlatMapFunction
 import org.apache.flink.streaming.api.functions.sink.SinkFunction
 import org.apache.flink.streaming.api.scala.DataStream
 import org.apache.flink.streaming.api.scala._
-
+import org.apache.flink.util.Collector
+import util.control.Breaks._
+import scala.collection.JavaConversions._
 /**
   *
   * counts by source - iphone android ipad etc
@@ -88,12 +93,13 @@ object SourceCount {
       .groupBy(2)
       .sortGroup(3, Order.DESCENDING)
       .first(n)
+      .map(t=>(t._1,t._2,t._3,t._4)) // source | searchterm
       .writeAsCsv(outputFile,"\n",";",FileSystem.WriteMode.OVERWRITE)
       .setParallelism(1)
       .name("Source Count")
   }
 
-  def compareMetrictoBatch(stream: DataStream[Tweet], compare:List[(String,String,Long)], sink: SinkFunction[SourceResult], props:TweetProps):Unit = {
+  def compareMetrictoBatch(stream: DataStream[Tweet], sourceCountTopN:DataStream[(String,String,Long)], sink: SinkFunction[SourceResult], props:TweetProps):Unit = {
     stream
       .filter(_.source.length > 0)
       .map(t => t.source match {
@@ -106,19 +112,38 @@ object SourceCount {
       .keyBy(_.key)
       .timeWindow(props.windowTime)
       .reduce(_ + _)
-      .map(t=> {
-          val arr = compare.filter(c=> t.searchTerm == c._1 && t.source == c._2)
-          var value:Int = 0
-          if(arr.length>0){
-            value = arr(0)._3.toInt
-          }
-
-          SourceResult(t.source,t.sourceUrl,t.timestamp, t.searchTerm,t.cnt-value)
-        })
+      .connect(sourceCountTopN)
+      .keyBy(_.searchTerm,_._2)
+      .flatMap(new SourceDiff)
       .addSink(sink)
       .setParallelism(props.parallelism)
       .name("Source Count Disjunct")
-
   }
 
+}
+
+
+class SourceDiff extends RichCoFlatMapFunction[SourceResult,(String,String,Long),SourceResult]{ // already keyed
+  private var compare: ListState[(String,String,Long)] = _
+
+  override def open(parameters: Configuration): Unit = {
+    super.open(parameters)
+    compare = getRuntimeContext.getListState(new ListStateDescriptor[(String,String,Long)]("sourceDiff", createTypeInformation[(String,String,Long)]))
+  }
+
+  override def flatMap1(t: SourceResult, out: Collector[SourceResult]): Unit = {
+    breakable {
+      for (elem:(String,String,Long) <- compare.get) {
+        if (elem._1 == t.source && elem._2 == t.searchTerm) {
+          out.collect(SourceResult(t.source,t.sourceUrl,t.timestamp, t.searchTerm,t.cnt-elem._3.toInt))
+          break
+        }
+      }
+    }
+  }
+
+  override def flatMap2(elem: (String,String,Long), out: Collector[SourceResult]): Unit = { //load into listState
+    compare.add(elem)
+    println("pushed into state " + elem)
+  }
 }
